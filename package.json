@@ -1,0 +1,40 @@
+{
+  "name": "@dotrino/tutorial",
+  "version": "0.1.1",
+  "description": "UI compartida de Dotrino para tutoriales/onboarding guiado reutilizable por cualquier app del ecosistema (Vue o vanilla). Burbujas estilo donar/compartir que se muestran una sola vez, una a la vez, con orden opcional, posicionadas para no salirse de pantalla. Web Component, Shadow DOM, sin JS de terceros ni cookies, bilingue es/en, con inyeccion de estilos. La misma para todas las apps.",
+  "type": "module",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./src/index.js"
+  ],
+  "keywords": [
+    "dotrino",
+    "dotrino",
+    "tutorial",
+    "onboarding",
+    "coach-marks",
+    "product-tour",
+    "web-component",
+    "custom-element",
+    "cross-app"
+  ],
+  "author": "seyacat",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imdotrino/dotrino-tutorial.git"
+  }
+}
