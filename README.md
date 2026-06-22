@@ -1,5 +1,7 @@
 # @dotrino/tutorial
 
+> **Parte del ecosistema [Dotrino](https://dotrino.com).** Misión: aplicaciones que resuelven problemas comunes, respetando tu privacidad — sin anuncios, sin cookies, sin rastreo de datos, sin vender tu identidad a nadie.
+
 UI compartida del ecosistema **Dotrino** para hacer **tutoriales / onboarding
 guiado**. Un Web Component (`<dotrino-tutorial>`, Shadow DOM) reutilizable
 por cualquier app (Vue o vanilla): muestra **burbujas iguales a la de
