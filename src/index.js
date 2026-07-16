@@ -204,6 +204,38 @@ function clamp (v, lo, hi) {
   return Math.max(lo, Math.min(hi, v))
 }
 
+/**
+ * `elementFromPoint` NO atraviesa el shadow DOM: en un punto ocupado por algo de
+ * adentro devuelve el HOST. Esto sigue bajando por cada shadow root abierto hasta
+ * el elemento real que está pintado ahí.
+ *
+ * Sin esto, anclar un paso a algo dentro de un shadow root (p. ej. el botón de
+ * perfil, que vive dentro de <dotrino-topbar>) daba SIEMPRE "tapado": el punto
+ * devolvía el host, y `host.contains(hijoDelShadow)` es false porque `contains`
+ * tampoco cruza la frontera. El paso se saltaba tras la gracia, en silencio.
+ */
+function deepElementFromPoint (x, y) {
+  let el = document.elementFromPoint(x, y)
+  const seen = new Set()
+  while (el && el.shadowRoot && !seen.has(el)) {
+    seen.add(el)
+    const inner = el.shadowRoot.elementFromPoint ? el.shadowRoot.elementFromPoint(x, y) : null
+    if (!inner || inner === el) break
+    el = inner
+  }
+  return el
+}
+
+/** Como `container.contains(node)`, pero cruzando shadow roots (sube por `host`). */
+function composedContains (container, node) {
+  let n = node
+  while (n) {
+    if (n === container) return true
+    n = n.parentNode || n.host || null
+  }
+  return false
+}
+
 class DotrinoTutorial extends HTMLElement {
   static get observedAttributes () {
     return ['lang', 'storage-key', 'overlay', 'no-highlight', 'step-timeout', 'no-count', 'no-skip']
@@ -414,9 +446,10 @@ class DotrinoTutorial extends HTMLElement {
     const px = clamp(r.left + r.width / 2, 1, vw - 1)
     const py = clamp(r.top + r.height / 2, 1, vh - 1)
     let topEl = null
-    try { topEl = document.elementFromPoint(px, py) } catch { topEl = null }
+    try { topEl = deepElementFromPoint(px, py) } catch { topEl = null }
     // topEl === this → nuestra propia burbuja tapa el centro: no cuenta como oclusión.
-    if (topEl && topEl !== this && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) return false
+    // Las comparaciones van con `composedContains`, que SÍ cruza el shadow DOM.
+    if (topEl && !composedContains(this, topEl) && !composedContains(el, topEl) && !composedContains(topEl, el)) return false
     return true
   }
 
