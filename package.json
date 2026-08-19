@@ -36,5 +36,11 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/imdotrino/dotrino-tutorial.git"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit"
   }
 }
