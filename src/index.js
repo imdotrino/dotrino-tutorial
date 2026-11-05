@@ -51,8 +51,16 @@
  *   {detail:{id}}, cc-tutorial-skip, cc-tutorial-done.
  */
 
+// Los tipos públicos viven en index.d.ts (lo que ven las apps); aquí se reusan.
+/** @typedef {import('./index.d.ts').CcTutorialStep} Step */
+/** @typedef {import('./index.d.ts').CcTutorialOptions} TutorialOptions */
+/** @typedef {import('./index.d.ts').CcLocalizedText} LocalizedText */
+/** @typedef {{ next: string, done: string, skip: string, step: string, close: string }} Labels */
+/** @typedef {'top' | 'bottom' | 'left' | 'right'} Side */
+
 // Etiquetas de los botones (es base/fallback). Los textos de cada paso se pasan
 // por `steps` y pueden ser string o { es, en } (ver _resolveText).
+/** @type {Record<'es' | 'en', Labels>} */
 const I18N = {
   es: { next: 'Siguiente', done: 'Entendido', skip: 'Saltar', step: '{n}/{total}', close: 'Cerrar' },
   en: { next: 'Next', done: 'Got it', skip: 'Skip', step: '{n}/{total}', close: 'Close' },
@@ -60,6 +68,7 @@ const I18N = {
 
 // Alias cómodos para `theme` -> variable CSS real. Cualquier clave que empiece
 // por `--` se aplica tal cual.
+/** @type {Record<string, string>} */
 const THEME_ALIASES = {
   accent: '--cct-bg', background: '--cct-bg', bg: '--cct-bg',
   text: '--cct-text', color: '--cct-text',
@@ -187,18 +196,30 @@ const STYLE = `
   }
 `
 
+/** @param {unknown} s */
 function escHtml (s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
+/** @param {unknown} s */
 function escAttr (s) {
   return escHtml(s).replace(/"/g, '&quot;')
 }
+/**
+ * @param {string} tpl
+ * @param {number} n
+ * @param {number} total
+ */
 function fmt (tpl, n, total) {
-  return String(tpl).replace('{n}', n).replace('{total}', total)
+  return String(tpl).replace('{n}', String(n)).replace('{total}', String(total))
 }
 function now () {
   return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
 }
+/**
+ * @param {number} v
+ * @param {number} lo
+ * @param {number} hi
+ */
 function clamp (v, lo, hi) {
   if (hi < lo) return lo
   return Math.max(lo, Math.min(hi, v))
@@ -213,6 +234,9 @@ function clamp (v, lo, hi) {
  * perfil, que vive dentro de <dotrino-topbar>) daba SIEMPRE "tapado": el punto
  * devolvía el host, y `host.contains(hijoDelShadow)` es false porque `contains`
  * tampoco cruza la frontera. El paso se saltaba tras la gracia, en silencio.
+ * @param {number} x
+ * @param {number} y
+ * @returns {Element | null}
  */
 function deepElementFromPoint (x, y) {
   let el = document.elementFromPoint(x, y)
@@ -226,16 +250,26 @@ function deepElementFromPoint (x, y) {
   return el
 }
 
-/** Como `container.contains(node)`, pero cruzando shadow roots (sube por `host`). */
+/**
+ * Como `container.contains(node)`, pero cruzando shadow roots (sube por `host`).
+ * @param {Node} container
+ * @param {Node} node
+ * @returns {boolean}
+ */
 function composedContains (container, node) {
+  /** @type {Node | null} */
   let n = node
   while (n) {
     if (n === container) return true
-    n = n.parentNode || n.host || null
+    n = n.parentNode || /** @type {ShadowRoot} */ (n).host || null
   }
   return false
 }
 
+/**
+ * El elemento `<dotrino-tutorial>`: es a la vez la vista y el controlador del tour.
+ * API pública documentada en index.d.ts.
+ */
 class DotrinoTutorial extends HTMLElement {
   static get observedAttributes () {
     return ['lang', 'storage-key', 'overlay', 'no-highlight', 'step-timeout', 'no-count', 'no-skip']
@@ -244,21 +278,40 @@ class DotrinoTutorial extends HTMLElement {
   constructor () {
     super()
     this.attachShadow({ mode: 'open' })
+    /** @type {Step[]} */
     this._steps = []
+    /** @type {Record<string, any> | null} */
     this._i18n = null
+    /** @type {Record<string, string | number> | null} */
     this._theme = null
     this._extraCss = ''
+    /** @type {Set<string>} */
     this._memSeen = new Set()       // fallback si localStorage no está disponible
     this._running = false
     this._runId = 0                 // generación: invalida loops async en vuelo
     this._index = -1
+    /** @type {Step[]} */
     this._queue = []
+    /** @type {{ step: Step, target: Element } | null} */
     this._active = null             // { step, target }
+    /** @type {(() => void) | null} */
     this._cancelWait = null
     this._raf = 0
     this._invisibleSince = 0
+    /** @type {HTMLDivElement | null} */
     this._rootEl = null
+    /** @type {HTMLStyleElement | null} */
     this._styleEl = null
+    /** @type {HTMLElement | null} */
+    this._bubbleEl = null
+    /** @type {HTMLElement | null} */
+    this._arrowEl = null
+    /** @type {HTMLElement | null} */
+    this._ringEl = null
+    /** @type {HTMLElement | null} */
+    this._backdropEl = null
+    /** @type {{ top: number, bottom: number } | null} */
+    this._insets = null
     this._reposition = () => { this._fit(); this._place() }
     this._onKeydown = this._onKeydown.bind(this)
   }
@@ -275,6 +328,7 @@ class DotrinoTutorial extends HTMLElement {
     this._raf = 0
   }
 
+  /** @param {string} name */
   attributeChangedCallback (name) {
     if (!this._rootEl) return
     if (name === 'lang' || name === 'storage-key' || name === 'overlay' || name === 'no-highlight' || name === 'no-count' || name === 'no-skip') {
@@ -283,19 +337,34 @@ class DotrinoTutorial extends HTMLElement {
   }
 
   /* ---------------- propiedades (para frameworks/JS) ---------------- */
+  /** @param {Step[]} v */
   set steps (v) { this._steps = Array.isArray(v) ? v.slice() : [] }
+  /** @returns {Step[]} */
   get steps () { return this._steps }
-  /** Override de etiquetas de botones: { es:{next,done,skip,...}, en:{...} } o plano {next,...}. */
+  /**
+   * Override de etiquetas de botones: { es:{next,done,skip,...}, en:{...} } o plano {next,...}.
+   * @param {Record<string, any> | null} v
+   */
   set i18n (v) { this._i18n = v || null; if (this._active) this._renderBubble() }
+  /** @returns {Record<string, any> | null} */
   get i18n () { return this._i18n }
-  /** Objeto de tema: claves CSS (--cct-... / --ccs-...) o alias (accent, text, radius, ...). */
+  /**
+   * Objeto de tema: claves CSS (--cct-... / --ccs-...) o alias (accent, text, radius, ...).
+   * @param {Record<string, string | number> | null} v
+   */
   set theme (v) { this._theme = v || null; this._applyTheme() }
+  /** @returns {Record<string, string | number> | null} */
   get theme () { return this._theme }
-  /** CSS arbitrario que se concatena DESPUÉS del estilo propio (gana por cascada). */
+  /**
+   * CSS arbitrario que se concatena DESPUÉS del estilo propio (gana por cascada).
+   * @param {string | null | undefined} v
+   */
   set styles (v) { this._extraCss = v == null ? '' : String(v); this._renderStyle() }
+  /** @returns {string} */
   get styles () { return this._extraCss }
 
   /* ---------------- idioma (mismo patrón que support) ---------------- */
+  /** @returns {'es' | 'en'} */
   get _lang () {
     const attr = (this.getAttribute('lang') || 'auto').toLowerCase()
     if (attr === 'es' || attr === 'en') return attr
@@ -304,6 +373,7 @@ class DotrinoTutorial extends HTMLElement {
     return (doc || nav).startsWith('en') ? 'en' : 'es'
   }
 
+  /** @returns {Labels} */
   get _t () {
     const base = I18N[this._lang]
     const o = this._i18n
@@ -313,6 +383,10 @@ class DotrinoTutorial extends HTMLElement {
     return { ...base, ...(flat || {}), ...(perLang || {}) }
   }
 
+  /**
+   * @param {LocalizedText | null | undefined} v
+   * @returns {string}
+   */
   _resolveText (v) {
     if (v == null) return ''
     if (typeof v === 'string') return v
@@ -324,20 +398,29 @@ class DotrinoTutorial extends HTMLElement {
 
   /* ---------------- persistencia "visto una vez" ---------------- */
   get _storageKey () { return this.getAttribute('storage-key') || 'cc-tutorial' }
+  /** @param {string} id */
   _seenKey (id) { return `${this._storageKey}:seen:${id}` }
 
+  /**
+   * @param {string} id
+   * @returns {boolean}
+   */
   isStepSeen (id) {
     if (this._memSeen.has(id)) return true
     try { return localStorage.getItem(this._seenKey(id)) === '1' } catch { return false }
   }
 
+  /** @param {string} id */
   markSeen (id) {
     if (!id) return
     this._memSeen.add(id)
     try { localStorage.setItem(this._seenKey(id), '1') } catch { /* sin storage */ }
   }
 
-  /** Olvida un paso (o todos) para que vuelvan a mostrarse. */
+  /**
+   * Olvida un paso (o todos) para que vuelvan a mostrarse.
+   * @param {string} [id]
+   */
   reset (id) {
     if (id) {
       this._memSeen.delete(id)
@@ -351,15 +434,20 @@ class DotrinoTutorial extends HTMLElement {
     }
   }
 
+  /** @returns {Step[]} */
   _orderedSteps () {
     return this._steps
-      .map((s, i) => ({ s, i, k: Number.isFinite(s && s.order) ? s.order : i }))
+      .map((s, i) => ({ s, i, k: s && Number.isFinite(s.order) ? /** @type {number} */ (s.order) : i }))
       .sort((a, b) => a.k - b.k || a.i - b.i)
       .map((x) => x.s)
       .filter((s) => s && s.id)
   }
 
   /* ---------------- ciclo de vida del tour ---------------- */
+  /**
+   * @param {{ delay?: number }} [opts]
+   * @returns {Promise<void>}
+   */
   async start (opts = {}) {
     this._ensureBaseDom()
     if (this._running) return
@@ -414,6 +502,10 @@ class DotrinoTutorial extends HTMLElement {
     this._finish()
   }
 
+  /**
+   * @param {Step} step
+   * @returns {Element | null}
+   */
   _resolveTarget (step) {
     const t = step.target != null ? step.target : (step.anchor != null ? step.anchor : step.el)
     try {
@@ -428,6 +520,10 @@ class DotrinoTutorial extends HTMLElement {
     return null
   }
 
+  /**
+   * @param {Element | null} el
+   * @returns {boolean}
+   */
   _isVisible (el) {
     if (!el || !el.isConnected) return false
     if (!el.getClientRects || !el.getClientRects().length) return false
@@ -456,12 +552,14 @@ class DotrinoTutorial extends HTMLElement {
   /* Detecta barras FIJAS/STICKY pegadas arriba o abajo del viewport (headers,
      navbars, footers) para no colocar la burbuja debajo de ellas. Devuelve los
      insets superior e inferior en px. */
+  /** @returns {{ top: number, bottom: number }} */
   _safeInsets () {
     if (this.hasAttribute('no-safe-area')) return { top: 0, bottom: 0 }
     const vw = window.innerWidth || document.documentElement.clientWidth
     const vh = window.innerHeight || document.documentElement.clientHeight
     let top = 0
     let bottom = 0
+    /** @type {(x: number, y: number) => void} */
     const sample = (x, y) => {
       let els
       try { els = document.elementsFromPoint(x, y) } catch { return }
@@ -481,13 +579,19 @@ class DotrinoTutorial extends HTMLElement {
     return { top, bottom }
   }
 
+  /**
+   * @param {Step} step
+   * @returns {Promise<Element | null>}
+   */
   _waitForTarget (step) {
     const timeout = Number.isFinite(step.timeout)
-      ? step.timeout
+      ? /** @type {number} */ (step.timeout)
       : (Number(this.getAttribute('step-timeout')) || 6000)
-    return new Promise((resolve) => {
+    /** @type {Promise<Element | null>} */
+    const p = new Promise((resolve) => {
       const t0 = now()
       let done = false
+      /** @param {Element | null} val */
       const finish = (val) => { if (done) return; done = true; cleanup(); resolve(val) }
       const tick = () => {
         if (!this._running) return finish(null)
@@ -496,6 +600,7 @@ class DotrinoTutorial extends HTMLElement {
         if (now() - t0 >= timeout) return finish(null)
       }
       const iv = setInterval(tick, 120)
+      /** @type {MutationObserver | null} */
       let mo = null
       try {
         mo = new MutationObserver(tick)
@@ -505,8 +610,13 @@ class DotrinoTutorial extends HTMLElement {
       this._cancelWait = () => finish(null)
       tick()
     })
+    return p
   }
 
+  /**
+   * @param {Step} step
+   * @param {Element} target
+   */
   _show (step, target) {
     this._active = { step, target }
     this._invisibleSince = 0
@@ -529,7 +639,7 @@ class DotrinoTutorial extends HTMLElement {
       try {
         if (typeof s.skipIf === 'function') {
           const r = s.skipIf()
-          if (r && typeof r.then !== 'function') continue
+          if (r && typeof /** @type {any} */ (r).then !== 'function') continue  // boolean o Promise
         }
       } catch { /* ignora */ }
       return true
@@ -576,8 +686,11 @@ class DotrinoTutorial extends HTMLElement {
     this._ringEl = root.querySelector('.ring')
     this._backdropEl = root.querySelector('.backdrop')
 
-    root.querySelector('.next').addEventListener('click', () => this._advance())
-    root.querySelector('.close').addEventListener('click', () => this._advance())
+    // .next y .close siempre están en la plantilla de arriba.
+    const nextBtn = /** @type {HTMLElement} */ (root.querySelector('.next'))
+    const closeBtn = /** @type {HTMLElement} */ (root.querySelector('.close'))
+    nextBtn.addEventListener('click', () => this._advance())
+    closeBtn.addEventListener('click', () => this._advance())
     const sk = root.querySelector('.skip')
     if (sk) sk.addEventListener('click', () => this._skipAll())
     if (this._backdropEl && this.hasAttribute('overlay-dismiss')) {
@@ -633,7 +746,7 @@ class DotrinoTutorial extends HTMLElement {
     const capH = Math.max(80, vh - 2 * margin - ins.top - ins.bottom)
     const cssMaxW = parseFloat(getComputedStyle(bubble).maxWidth)
     bubble.style.maxWidth = (Number.isFinite(cssMaxW) ? Math.min(cssMaxW, capW) : capW) + 'px'
-    const body = bubble.querySelector('.body')
+    const body = /** @type {HTMLElement | null} */ (bubble.querySelector('.body'))
     if (!body) {
       bubble.style.maxHeight = capH + 'px'
       bubble.style.overflowY = 'auto'
@@ -676,20 +789,26 @@ class DotrinoTutorial extends HTMLElement {
     const cx = tr.left + tr.width / 2
     const cy = tr.top + tr.height / 2
 
+    /** @type {(p: Side) => { left: number, top: number }} */
     const computePos = (p) => {
       if (p === 'bottom') return { left: cx - bw / 2, top: tr.bottom + gap }
       if (p === 'top') return { left: cx - bw / 2, top: tr.top - gap - bh }
       if (p === 'right') return { left: tr.right + gap, top: cy - bh / 2 }
       /* left */ return { left: tr.left - gap - bw, top: cy - bh / 2 }
     }
+    /** @type {(pos: { left: number, top: number }) => boolean} */
     const fits = (pos) =>
       pos.left >= margin && pos.left + bw <= vw - margin &&
       pos.top >= mTop && pos.top + bh <= vh - mBot
 
+    /** @type {Record<Side, Side>} */
     const opposite = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }
+    /** @type {Side} */
     const pref = a.step.placement && opposite[a.step.placement] ? a.step.placement : 'bottom'
-    const order = [pref, opposite[pref], ...['bottom', 'top', 'right', 'left'].filter((p) => p !== pref && p !== opposite[pref])]
+    /** @type {Side[]} */
+    const order = [pref, opposite[pref], .../** @type {Side[]} */ (['bottom', 'top', 'right', 'left']).filter((p) => p !== pref && p !== opposite[pref])]
 
+    /** @type {{ p: Side, left: number, top: number } | null} */
     let chosen = null
     for (const p of order) {
       const pos = computePos(p)
@@ -699,8 +818,9 @@ class DotrinoTutorial extends HTMLElement {
       // Ningún lado entra (objetivo en una esquina/borde): elegimos el lado con
       // MÁS espacio libre (descontando el área de barras fijas), para que el
       // cursor apunte al objetivo tras el clamp.
+      /** @type {Record<Side, number>} */
       const space = { bottom: (vh - mBot) - tr.bottom, top: tr.top - mTop, right: vw - tr.right, left: tr.left }
-      const p = Object.keys(space).sort((x, y) => space[y] - space[x])[0]
+      const p = /** @type {Side[]} */ (Object.keys(space)).sort((x, y) => space[y] - space[x])[0]
       chosen = { p, ...computePos(p) }
     }
 
@@ -713,6 +833,7 @@ class DotrinoTutorial extends HTMLElement {
     // placement teórico: así no apunta al vacío si el clamp movió la burbuja. Si
     // la burbuja queda solapada con el objetivo (sin un lado limpio), se oculta.
     const eps = 1
+    /** @type {Side | null} */
     let side = null
     if (top >= tr.bottom - eps) side = 'bottom'
     else if (top + bh <= tr.top + eps) side = 'top'
@@ -730,6 +851,15 @@ class DotrinoTutorial extends HTMLElement {
     }
   }
 
+  /**
+   * @param {Side | null} placement
+   * @param {DOMRect} tr
+   * @param {number} left
+   * @param {number} top
+   * @param {number} bw
+   * @param {number} bh
+   * @param {number} size
+   */
   _placeArrow (placement, tr, left, top, bw, bh, size) {
     const arrow = this._arrowEl
     if (!arrow) return
@@ -751,6 +881,7 @@ class DotrinoTutorial extends HTMLElement {
     }
   }
 
+  /** @param {boolean} [mark] */
   _advance (mark = true) {
     const a = this._active
     if (mark && a && a.step && a.step.id) this.markSeen(a.step.id)
@@ -793,6 +924,7 @@ class DotrinoTutorial extends HTMLElement {
     document.removeEventListener('keydown', this._onKeydown, true)
   }
 
+  /** @param {KeyboardEvent} e */
   _onKeydown (e) {
     if (e.key === 'Escape' && this._active) {
       if (this.hasAttribute('esc-skip')) this._skipAll()
@@ -806,7 +938,8 @@ class DotrinoTutorial extends HTMLElement {
     this._styleEl = document.createElement('style')
     this._rootEl = document.createElement('div')
     this._rootEl.className = 'cct-root'
-    this.shadowRoot.append(this._styleEl, this._rootEl)
+    const shadow = /** @type {ShadowRoot} */ (this.shadowRoot)  // abierto en el constructor
+    shadow.append(this._styleEl, this._rootEl)
     this._renderStyle()
     this._applyTheme()
   }
@@ -832,12 +965,15 @@ class DotrinoTutorial extends HTMLElement {
 /**
  * Crea (o reutiliza) un `<dotrino-tutorial>` y arranca el tour.
  * Devuelve el elemento, que ES el controlador (start/stop/next/skip/reset/...).
+ * Sin `document` (SSR) devuelve null.
+ * @param {Partial<TutorialOptions>} [options]
+ * @returns {DotrinoTutorial | null}
  */
 function createTutorial (options = {}) {
   if (typeof document === 'undefined') return null
-  let el = options.element || options.el
+  let el = /** @type {DotrinoTutorial | undefined} */ (/** @type {unknown} */ (options.element || options.el))
   if (!el) {
-    el = document.createElement('dotrino-tutorial')
+    el = /** @type {DotrinoTutorial} */ (/** @type {unknown} */ (document.createElement('dotrino-tutorial')))
     ;(options.mount || document.body).appendChild(el)
   }
   if (options.lang != null) el.setAttribute('lang', options.lang)
